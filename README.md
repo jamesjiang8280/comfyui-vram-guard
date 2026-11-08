@@ -1,4 +1,4 @@
-# ComfyUI VRAM Guard
+﻿# ComfyUI VRAM Guard
 
 给 ComfyUI 进程加一个**显存天花板**：默认 12 GiB，16 GB 显卡上给系统 / 游戏 / 视频留出约 4 GiB；同时在节点上实时显示显存与 GPU 利用率。
 
@@ -16,7 +16,7 @@
 
 ```bash
 cd <ComfyUI>/custom_nodes
-git clone https://github.com/<your-name>/comfyui-vram-guard.git
+git clone https://github.com/jamesjiang8280/comfyui-vram-guard.git
 ```
 
 也可以直接把 `comfyui-vram-guard` 目录复制到 `<ComfyUI>/custom_nodes/` 下。
@@ -126,7 +126,7 @@ A ComfyUI custom node that caps the process VRAM budget (default 12 GiB) **befor
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/<your-name>/comfyui-vram-guard.git
+git clone https://github.com/jamesjiang8280/comfyui-vram-guard.git
 ```
 
 Restart ComfyUI, hard-refresh the browser (Ctrl+F5), then add **VRAM Guard** from the `VRAM` category.
