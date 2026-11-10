@@ -57,13 +57,13 @@ class VRAMLiveWidget {
   }
 
   computeSize(width) {
-    return [width, 150];
+    return [width, 200];
   }
 
   draw(ctx, node, width, y, height) {
     // ComfyUI passes the standard 20px widget height here even though
     // computeSize() reserved the whole panel area; use the node geometry.
-    const panelHeight = Math.max(150, (node?.size?.[1] || y + 158) - y - 8);
+    const panelHeight = Math.max(200, (node?.size?.[1] || y + 208) - y - 8);
     drawLivePanel(ctx, width, y, panelHeight, live.data);
   }
 
@@ -82,8 +82,8 @@ function setupNodeType(nodeType) {
 
   nodeType.prototype.__resizeForLivePanel = function () {
     const required = typeof this.computeSize === "function" ? this.computeSize() : null;
-    const width = Math.max(this.size?.[0] || 0, required?.[0] || 0, 380);
-    const height = Math.max(this.size?.[1] || 0, required?.[1] || 0, 240);
+    const width = Math.max(this.size?.[0] || 0, required?.[0] || 0, 400);
+    const height = Math.max(this.size?.[1] || 0, required?.[1] || 0, 300);
     if (!this.size || this.size[0] !== width || this.size[1] !== height) {
       this.setSize([width, height]);
     }

@@ -44,6 +44,16 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+function fitText(ctx, text, maxWidth) {
+  const value = String(text ?? "");
+  if (!value || ctx.measureText(value).width <= maxWidth) return value;
+  let clipped = value;
+  while (clipped.length > 1 && ctx.measureText(`${clipped}…`).width > maxWidth) {
+    clipped = clipped.slice(0, -1);
+  }
+  return `${clipped}…`;
+}
+
 function drawBar(ctx, x, y, w, h, pct, color) {
   ctx.fillStyle = C.track;
   roundRect(ctx, x, y, w, h, h / 2);
@@ -54,6 +64,28 @@ function drawBar(ctx, x, y, w, h, pct, color) {
     roundRect(ctx, x, y, fill, h, h / 2);
     ctx.fill();
   }
+}
+
+function drawBadge(ctx, right, cy, label) {
+  if (!label) return 0;
+  ctx.font = "bold 9px 'Segoe UI', sans-serif";
+  const text = String(label).toUpperCase();
+  const textWidth = ctx.measureText(text).width;
+  const padX = 6;
+  const w = textWidth + padX * 2;
+  const h = 15;
+  const x = right - w;
+  ctx.fillStyle = "rgba(56, 189, 248, 0.16)";
+  roundRect(ctx, x, cy - h / 2, w, h, 4);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = "#7dd3fc";
+  ctx.textAlign = "center";
+  ctx.fillText(text, x + w / 2, cy);
+  ctx.textAlign = "left";
+  return w;
 }
 
 function drawSparkline(ctx, x, y, w, h, history) {
@@ -128,29 +160,58 @@ export function drawLivePanel(ctx, width, y, height, data) {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  if (!data || !data.total_bytes) {
+  if (!data) {
     ctx.fillStyle = C.dim;
     ctx.font = "12px 'Segoe UI', sans-serif";
-    const msg = data && data.cuda === false ? "CUDA 不可用" : "正在连接显存监视…";
-    ctx.fillText(msg, x + 6, y + height / 2);
+    ctx.fillText("正在连接显存监视…", x + 6, y + height / 2);
     ctx.restore();
     return;
   }
 
-  const total = data.total_bytes;
-  const used = data.used_bytes || 0;
-  const pct = data.vram_pct || 0;
+  const device = data.device || {};
+  const kind = device.kind || data.kind || "cpu";
+  const unified = Boolean(device.unified ?? data.unified);
+  const deviceName = device.name || data.name || "未知设备";
+  const badge = device.badge || String(kind).toUpperCase();
+
+  // Row 0: which accelerator actually runs the workflow.
+  const headerY = y + 16;
+  ctx.font = "bold 12px 'Segoe UI', 'PingFang SC', sans-serif";
+  ctx.fillStyle = C.text;
+  const badgeWidth = ctx.measureText(String(badge).toUpperCase()).width + 12;
+  const nameLimit = w - 12 - badgeWidth - 10;
+  ctx.fillText(fitText(ctx, deviceName, nameLimit), x + 4, headerY);
+  drawBadge(ctx, x + w - 4, headerY, badge);
+
+  if (kind === "cpu") {
+    ctx.font = "11px 'Segoe UI', 'PingFang SC', sans-serif";
+    ctx.fillStyle = C.warn;
+    ctx.fillText("未检测到可用的算力卡", x + 4, y + 42);
+    ctx.fillStyle = C.dim;
+    ctx.font = "10px 'Segoe UI', 'PingFang SC', sans-serif";
+    ctx.fillText(`仅监控 · 系统内存 ${Number(data.system_percent || 0).toFixed(0)}%`, x + 4, y + 60);
+    ctx.restore();
+    return;
+  }
+
+  const total = Number(data.total_bytes) || 0;
+  const used = Number(data.used_bytes) || 0;
+  const pct = Number(data.vram_pct) || 0;
   const gpu = data.gpu_util;
   const hasGpu = gpu !== null && gpu !== undefined;
 
-  // Row 1: VRAM absolute values + percentage.
-  const row1 = y + 18;
-  ctx.font = "12px 'Segoe UI', sans-serif";
+  // Row 1: memory values + percentage.
+  const row1 = y + 37;
+  ctx.font = "12px 'Segoe UI', 'PingFang SC', sans-serif";
   ctx.fillStyle = C.vram;
-  ctx.fillText("显存", x + 4, row1);
+  const memoryLabel = unified ? "统一内存" : "显存";
+  ctx.fillText(memoryLabel, x + 4, row1);
+  const labelWidth = ctx.measureText(memoryLabel).width;
   ctx.fillStyle = C.text;
   ctx.font = "12px 'Consolas', 'Segoe UI', monospace";
-  ctx.fillText(`${fmtGiB(used)} / ${fmtGiB(total)} GiB`, x + 40, row1);
+  const valueText = `${fmtGiB(used)} / ${fmtGiB(total)} GiB`;
+  const valueX = x + 4 + labelWidth + 8;
+  ctx.fillText(fitText(ctx, valueText, x + w - 56 - valueX), valueX, row1);
 
   ctx.textAlign = "right";
   ctx.fillStyle = vramColor(pct);
@@ -158,12 +219,12 @@ export function drawLivePanel(ctx, width, y, height, data) {
   ctx.fillText(`${pct.toFixed(1)}%`, x + w - 4, row1);
   ctx.textAlign = "left";
 
-  // VRAM bar with a tick at the configured limit.
-  const barY = y + 29;
+  // Memory bar with a tick at the configured ceiling.
+  const barY = y + 48;
   const barH = 9;
   drawBar(ctx, x + 4, barY, w - 8, barH, pct, vramColor(pct));
-  if (data.limit_bytes > 0 && data.limit_bytes < total) {
-    const lx = x + 4 + (w - 8) * clamp01(data.limit_bytes / total);
+  if (Number(data.limit_bytes) > 0 && Number(data.limit_bytes) < total) {
+    const lx = x + 4 + (w - 8) * clamp01(Number(data.limit_bytes) / total);
     ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -172,34 +233,50 @@ export function drawLivePanel(ctx, width, y, height, data) {
     ctx.stroke();
   }
 
-  // Row 2: limit / reserve.
-  const row2 = y + 50;
-  ctx.font = "10px 'Segoe UI', sans-serif";
+  // Row 2: ceiling / reserve.
+  const row2 = y + 69;
+  ctx.font = "10px 'Segoe UI', 'PingFang SC', sans-serif";
   ctx.fillStyle = C.dim;
-  const limitText = data.limit_gb ? `已生效 ${Number(data.limit_gb).toFixed(2)} GiB` : "未设置上限";
-  const reserve = data.limit_bytes ? Math.max(0, total - data.limit_bytes) : 0;
-  ctx.fillText(
-    data.limit_bytes ? `${limitText} · 预留 ${fmtGiB(reserve)} GiB` : limitText,
-    x + 4,
-    row2,
-  );
+  const limitText = data.limit_gb ? `上限 ${Number(data.limit_gb).toFixed(2)} GiB` : "未设置上限";
+  const reserve = Number(data.reserve_bytes) || 0;
+  const reserveText = data.limit_bytes && reserve > 0 ? ` · 预留 ${fmtGiB(reserve)} GiB` : "";
+  const overText = data.over_limit ? " · 已超预算" : "";
+  ctx.fillStyle = data.over_limit ? C.bad : C.dim;
+  ctx.fillText(fitText(ctx, `${limitText}${reserveText}${overText}`, w - 8), x + 4, row2);
 
-  // Row 3: GPU core utilisation.
-  const row3 = y + 68;
-  ctx.font = "12px 'Segoe UI', sans-serif";
+  // Row 3: backend specific detail (unified memory / torch allocator).
+  const row3 = y + 86;
+  ctx.font = "10px 'Segoe UI', 'PingFang SC', sans-serif";
+  ctx.fillStyle = C.dim;
+  let detail;
+  if (unified) {
+    const processGb = fmtGiB(data.process_bytes);
+    const systemPct = data.system_percent;
+    const mpsGb = fmtGiB(data.mps_allocated_bytes);
+    const systemText = systemPct !== null && systemPct !== undefined ? ` · 系统 ${Number(systemPct).toFixed(0)}%` : "";
+    detail = `ComfyUI 进程 ${processGb} GiB · MPS ${mpsGb} GiB${systemText}`;
+  } else {
+    const enforced = data.enforce === "allocator" ? "分配器硬上限" : "预留提示";
+    detail = `ComfyUI ${fmtGiB(data.torch_allocated_bytes)} / ${fmtGiB(data.torch_reserved_bytes)} GiB · ${enforced}`;
+  }
+  ctx.fillText(fitText(ctx, detail, w - 8), x + 4, row3);
+
+  // Row 4: GPU core utilisation.
+  const row4 = y + 105;
+  ctx.font = "12px 'Segoe UI', 'PingFang SC', sans-serif";
   ctx.fillStyle = C.gpu;
-  ctx.fillText("GPU 核心", x + 4, row3);
+  ctx.fillText("GPU 核心", x + 4, row4);
   ctx.textAlign = "right";
   ctx.fillStyle = C.gpu;
   ctx.font = "bold 13px 'Segoe UI', sans-serif";
-  ctx.fillText(hasGpu ? `${Math.round(gpu)}%` : "—", x + w - 4, row3);
+  ctx.fillText(hasGpu ? `${Math.round(gpu)}%` : "—", x + w - 4, row4);
   ctx.textAlign = "left";
 
-  const gpuBarY = y + 79;
+  const gpuBarY = y + 116;
   drawBar(ctx, x + 4, gpuBarY, w - 8, 6, hasGpu ? gpu : 0, C.gpu);
 
-  // History sparkline: VRAM % (cyan) and GPU % (amber) over the last 120 s.
-  drawSparkline(ctx, x + 4, y + 92, w - 8, height - 100, data.history);
+  // History sparkline: memory % (cyan) and GPU % (purple) over the last 120 s.
+  drawSparkline(ctx, x + 4, y + 129, w - 8, height - 137, data.history);
 
   ctx.restore();
 }

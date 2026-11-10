@@ -1,7 +1,12 @@
 """Small HTTP surface for debugging and for launcher scripts.
 
-GET  /vram_guard/status -> applied state + live device numbers
+GET  /vram_guard/status -> applied state + live device numbers + device info
+GET  /vram_guard/live   -> one snapshot, device info and the 120 s history
 POST /vram_guard/apply  -> {"limit_gb": 12.0, "unload_cached_models": true}
+
+The device info block reports the accelerator that actually runs the
+workflow (NVIDIA / AMD ROCm / Apple Silicon MPS / Intel XPU / Ascend NPU /
+Cambricon MLU / CPU), so scripts can log it next to the memory numbers.
 """
 
 from __future__ import annotations
@@ -53,7 +58,8 @@ def register() -> bool:
             )
             return web.json_response({"result": result, "status": core.status()})
 
-        LOGGER.info("[VRAMGuard] HTTP routes registered: /vram_guard/status")
+        LOGGER.info("[VRAMGuard] HTTP routes registered: /vram_guard/status (device: %s)",
+                    core.device_label())
         return True
     except Exception:
         LOGGER.exception("[VRAMGuard] failed to register HTTP routes")

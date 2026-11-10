@@ -15,8 +15,10 @@ class VRAMGuard:
     """Set a hard VRAM ceiling for this ComfyUI process / workflow."""
 
     DESCRIPTION = (
-        "限制 ComfyUI 可用的显存上限（GiB）。在每次提交工作流时、任何节点执行前生效，"
-        "同时设置 PyTorch 分配器上限和 comfy-aimdo 的保留显存，避免 ComfyUI 把游戏/视频挤爆。"
+        "限制 ComfyUI 跑工作流可用的显存/统一内存上限（GiB），并在节点面板上显示当前算力卡型号"
+        "（NVIDIA / AMD / Apple Silicon / Intel / Ascend）。在每次提交工作流时、任何节点执行前生效："
+        "CUDA 上设置 PyTorch 分配器上限与 comfy-aimdo 预留显存；Apple Silicon 上同时限制 MPS "
+        "分配器并接管 MPS 可用内存计算，从而在 macOS 统一内存里给 ComfyUI 划出预算。"
     )
 
     @classmethod
@@ -29,11 +31,13 @@ class VRAMGuard:
                     "max": 1024.0,
                     "step": 0.25,
                     "tooltip": "ComfyUI 最多可用的显存（GiB）。16GB 卡填 12 表示给系统/游戏留约 4GiB。"
-                               "填大于等于总显存的值可取消限制。",
+                               "Apple Silicon 上表示统一内存预算（按 Metal 推荐工作集折算 fraction）。"
+                               "填大于等于物理内存的值可取消限制。",
                 }),
                 "unload_cached_models": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "如果当前缓存占用已经超过新上限，先卸载缓存模型再安装上限（会变慢一次）。",
+                    "tooltip": "如果当前缓存/进程占用已经超过新上限，先卸载缓存模型再安装上限（会变慢一次）。"
+                               "Apple Silicon 上会同时检查 MPS 分配与进程常驻内存。",
                 }),
             }
         }
@@ -50,13 +54,17 @@ class VRAMGuard:
         report = core.format_report(result, snap)
         limit_mb = int(result.get("limit_bytes", 0) // (1024 * 1024))
         free_mb = int(snap.get("free_bytes", 0) // (1024 * 1024))
-        return {"ui": {"text": [report]}, "result": (report, limit_mb, free_mb)}
+        return {
+            "ui": {"text": [report], "device": [core.device_label()]},
+            "result": (report, limit_mb, free_mb),
+        }
 
 
 class VRAMMonitor:
     """Read-only VRAM report node."""
 
-    DESCRIPTION = "只读：显示当前设备显存、ComfyUI 进程显存和 aimdo 记账，不修改任何设置。"
+    DESCRIPTION = ("只读：显示当前用于跑工作流的算力卡型号、显存/统一内存占用、"
+                   "ComfyUI 进程占用和 aimdo 记账，不修改任何设置。")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -84,7 +92,10 @@ class VRAMMonitor:
         total_gb = snap.get("total_bytes", 0) / gib
         used_gb = snap.get("used_bytes", 0) / gib
         free_gb = snap.get("free_bytes", 0) / gib
-        return {"ui": {"text": [report]}, "result": (report, total_gb, used_gb, free_gb)}
+        return {
+            "ui": {"text": [report], "device": [core.device_label()]},
+            "result": (report, total_gb, used_gb, free_gb),
+        }
 
 
 NODE_CLASS_MAPPINGS = {
